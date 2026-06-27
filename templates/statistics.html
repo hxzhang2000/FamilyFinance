@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+        <div class="chart-container">
+            <canvas id="monthlyProfitChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="yearlyProfitChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h2>理财产品分布</h2>
+            <canvas id="productDistributionChart"></canvas>
+        </div>
+
+<script>
+    // 每月收益图表
+    const ctx1 = document.getElementById('monthlyProfitChart').getContext('2d');
+    const chartData1 = {
+        type: 'bar',
+        data: {
+            labels: JSON.parse('{{ monthly_labels|tojson|safe }}'),
+            datasets: [{
+                label: '每月收益',
+                data: JSON.parse('{{ monthly_profits|tojson|safe }}'),
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    };
+    new Chart(ctx1, chartData1);
+
+    // 理财产品分布图表
+    const ctx2 = document.getElementById('productDistributionChart').getContext('2d');
+    const chartData2 = {
+        type: 'pie',
+        data: {
+            labels: JSON.parse('{{ product_names|tojson|safe }}'),
+            datasets: [{
+                label: '投资金额',
+                data: JSON.parse('{{ product_amounts|tojson|safe }}'),
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(54, 162, 235, 0.2)',
+                    'rgba(255, 206, 86, 0.2)',
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(153, 102, 255, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)'
+                ],
+                borderWidth: 1
+            }]
+        }
+    };
+    new Chart(ctx2, chartData2);
+
+    // 年度收益图表
+    const ctx3 = document.getElementById('yearlyProfitChart').getContext('2d');
+    const chartData3 = {
+        type: 'line',
+        data: {
+            labels: JSON.parse('{{ yearly_labels|tojson|safe }}'),
+            datasets: [{
+                label: '年度收益',
+                data: JSON.parse('{{ yearly_profits|tojson|safe }}'),
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 2,
+                fill: true
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    };
+    new Chart(ctx3, chartData3);
+</script>
+{% endblock %}

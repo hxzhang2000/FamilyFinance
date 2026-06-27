@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>所有理财记录</h2>
+    {% if not records %}
+        <p>还没有理财记录</p>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>交易类型</th>
+                    <th>产品名称</th>
+                    <th>金额</th>
+                    <th>交易日期</th>
+                    <th>年化收益率</th>
+                    <th>期限</th>
+                    <th>到期日</th>
+                    <th>预计收益</th>
+                    <th>实际收益</th>
+                    <th>真实收益率</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr>
+                    <td>{{ '买入' if record['type'] == 'purchase' else '赎回' }}</td>
+                    <td>{{ record['product_name'] }}</td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ "%.2f"|format(record['amount']) }}元
+                        {% else %}
+                            {{ "%.2f"|format(record['redeem_amount']) }}元
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ record['purchase_date'] }}
+                        {% else %}
+                            {{ record['redeem_date'] }}
+                        {% endif %}                        
+                    </td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ "%.2f"|format(record['annual_rate'] * 100) }}%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ record['duration'] }}天
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ record['end_date'] }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'purchase' %}
+                            {{ "%.2f"|format(record['profit']) }}元
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'redeem' %}
+                            {% if 'actual_profit' in record %}
+                                {{ "%.2f"|format(record['actual_profit']) }}元
+                            {% else %}
+                                0.00元
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if record['type'] == 'redeem' and 'real_rate' in record %}
+                            {{ "%.2f"|format(record['real_rate']) }}%
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/delete/{{ record['id'] }}" onclick="return confirm('确定要删除这条记录吗？')">删除</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="total-profit">
+            <strong>总预计收益：{{ "%.2f"|format(total_profit) }}元</strong>
+            <strong>总实际收益：{{ "%.2f"|format(total_actual_profit) }}元</strong>
+            <strong>平均真实收益率：{{ "%.2f"|format(avg_real_rate) }}%</strong>
+        </div>
+    {% endif %}
+    
+{% endblock %}

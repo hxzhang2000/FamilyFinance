@@ -1,0 +1,10 @@
+
+# 忽略以下目录
+build
+dist
+dockerimages
+
+# 忽略以下文件
+finance_data.json
+main.py
+FamilyFinance.spec

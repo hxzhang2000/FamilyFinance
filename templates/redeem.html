@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>赎回理财记录</h2>
+    <form method="POST" action="/redeem">
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const autoCalc = document.getElementById('profit_calc_auto');
+            const manualCalc = document.getElementById('profit_calc_manual');
+            const manualProfit = document.querySelector('.manual-profit');
+            
+            function toggleManualProfit() {
+                manualProfit.style.display = manualCalc.checked ? 'block' : 'none';
+                if (manualCalc.checked) {
+                    document.getElementById('actual_profit').required = true;
+                } else {
+                    document.getElementById('actual_profit').required = false;
+                }
+            }
+            
+            autoCalc.addEventListener('change', toggleManualProfit);
+            manualCalc.addEventListener('change', toggleManualProfit);
+            toggleManualProfit(); // Initial call
+        });
+    </script>
+        <div class="form-group">
+            <label for="record_id">选择理财记录:</label>
+            <select class="form-control" id="record_id" name="record_id" required>
+{% for record in records %}
+    {% if not record.get('redeemed', False) %}
+    <option value="{{ record.id }}">
+        {{ record.product_name }} - {{ record.amount }}元 ({{ record.purchase_date }})
+    </option>
+    {% endif %}
+{% endfor %}
+            </select>
+        </div>
+
+            <div class="form-group">
+                <label for="redeem_amount">赎回金额</label>
+                <input type="number" step="0.01" class="form-control" id="redeem_amount" name="redeem_amount" required>
+            </div>
+            <div class="form-group">
+                <label for="redeem_date">赎回日期</label>
+                <input type="date" class="form-control" id="redeem_date" name="redeem_date" required>
+            </div>
+            <div class="form-group">
+                <label>收益计算方式</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="profit_calc" id="profit_calc_auto" value="auto" checked>
+                    <label class="form-check-label" for="profit_calc_auto">
+                        自动计算收益
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="profit_calc" id="profit_calc_manual" value="manual">
+                    <label class="form-check-label" for="profit_calc_manual">
+                        手动输入收益
+                    </label>
+                </div>
+            </div>
+            <div class="form-group manual-profit" style="display: none;">
+                <div class="form-row">
+                    <div class="col">
+                        <label for="actual_profit">实际收益金额</label>
+                        <input type="number" step="0.01" class="form-control" id="actual_profit" name="actual_profit" required>
+                        <small class="form-text text-muted">请输入实际获得的收益金额（用于计算真实收益率）</small>
+                    </div>
+                </div>
+            </div>
+
+        <button type="submit" class="btn-submit">提交赎回</button>
+    </form>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>添加理财记录</h2>
+    <form method="POST" action="/add">
+        <div class="form-group">
+            <label for="record_type">记录类型:</label>
+            <select class="form-control" id="record_type" name="record_type" required onchange="toggleFields()">
+                <option value="purchase">买入</option>
+                <option value="redeem">赎回</option>
+            </select>
+        </div>
+
+        <div id="purchase-fields">
+            <div class="form-group">
+                <label for="product_name">理财产品名称:</label>
+                <input type="text" class="form-control" id="product_name" name="product_name">
+            </div>
+
+            <div class="form-group">
+                <label for="amount">金额:</label>
+                <input type="number" step="0.01" class="form-control" id="amount" name="amount">
+            </div>
+
+            <div class="form-group">
+                <label for="annual_rate">年化收益率:</label>
+                <input type="number" step="0.00001" class="form-control" id="annual_rate" name="annual_rate">
+            </div>
+
+            <div class="form-group">
+                <label for="duration">期限(天):</label>
+                <input type="number" class="form-control" id="duration" name="duration">
+            </div>
+
+            <div class="form-group">
+                <label for="purchase_date">购买日期:</label>
+                <input type="date" class="form-control" id="purchase_date" name="purchase_date">
+            </div>
+        </div>
+
+        <div id="redeem-fields" style="display: none;">
+            <div class="form-group">
+                <label for="purchase_record_id">选择买入记录:</label>
+                <select class="form-control" id="purchase_record_id" name="purchase_record_id">
+                    {% for record in purchase_records %}
+                        <option value="{{ record.id }}">{{ record.product_name }} - {{ record.amount }}元 ({{ record.purchase_date }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="redeem_amount">赎回金额:</label>
+                <input type="number" step="0.01" class="form-control" id="redeem_amount" name="redeem_amount">
+            </div>
+
+            <div class="form-group">
+                <label for="redeem_date">赎回日期:</label>
+                <input type="date" class="form-control" id="redeem_date" name="redeem_date">
+            </div>
+
+            <div class="form-group">
+                <label>收益计算方式</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="profit_calc" id="auto_calc" value="auto" checked>
+                    <label class="form-check-label" for="auto_calc">
+                        自动计算收益
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="profit_calc" id="manual_calc" value="manual">
+                    <label class="form-check-label" for="manual_calc">
+                        手动输入收益
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group manual-profit" style="display: none;">
+                <div class="form-row">
+                    <div class="col">
+                        <label for="actual_profit">实际收益金额</label>
+                        <input type="number" class="form-control" id="actual_profit" name="actual_profit" min="0">
+                        <small class="form-text text-muted">请输入实际获得的收益金额</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-submit">提交</button>
+    </form>
+
+    <script>
+        function toggleFields() {
+            const recordType = document.getElementById('record_type').value;
+            if (recordType === 'purchase') {
+                document.getElementById('purchase-fields').style.display = 'block';
+                document.getElementById('redeem-fields').style.display = 'none';
+            } else {
+                document.getElementById('purchase-fields').style.display = 'none';
+                document.getElementById('redeem-fields').style.display = 'block';
+            }
+        }
+
+        // 处理收益计算方式切换
+        document.addEventListener('DOMContentLoaded', function() {
+            const manualProfitSection = document.querySelector('.manual-profit');
+            const calcRadios = document.querySelectorAll('input[name="profit_calc"]');
+            
+            calcRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'manual') {
+                        manualProfitSection.style.display = 'block';
+                    } else {
+                        manualProfitSection.style.display = 'none';
+                    }
+                });
+            });
+        });
+    </script>
+{% endblock %}
