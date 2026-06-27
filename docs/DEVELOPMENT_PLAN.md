@@ -1,6 +1,10 @@
 # FamilyFinance 完整开发方案
 
 > **版本：v1.1** | 更新日期：2026-06-27
+>
+> ⚠️ **注意**：本方案包含企业级安全配置。如需精简版，见 [DEVELOPMENT_PLAN_LITE.md](DEVELOPMENT_PLAN_LITE.md)
+>
+> **可延后内容**：CSRF防护、Marshmallow验证、Docker安全配置、Nginx配置、环境变量管理
 
 ## 一、项目概述
 
