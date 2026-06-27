@@ -1,103 +1,216 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h2>所有理财记录</h2>
-    {% if not records %}
-        <p>还没有理财记录</p>
-    {% else %}
-        <table>
-            <thead>
-                <tr>
-                    <th>交易类型</th>
-                    <th>产品名称</th>
-                    <th>金额</th>
-                    <th>交易日期</th>
-                    <th>年化收益率</th>
-                    <th>期限</th>
-                    <th>到期日</th>
-                    <th>预计收益</th>
-                    <th>实际收益</th>
-                    <th>真实收益率</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for record in records %}
-                <tr>
-                    <td>{{ '买入' if record['type'] == 'purchase' else '赎回' }}</td>
-                    <td>{{ record['product_name'] }}</td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ "%.2f"|format(record['amount']) }}元
-                        {% else %}
-                            {{ "%.2f"|format(record['redeem_amount']) }}元
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ record['purchase_date'] }}
-                        {% else %}
-                            {{ record['redeem_date'] }}
-                        {% endif %}                        
-                    </td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ "%.2f"|format(record['annual_rate'] * 100) }}%
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ record['duration'] }}天
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ record['end_date'] }}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'purchase' %}
-                            {{ "%.2f"|format(record['profit']) }}元
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'redeem' %}
-                            {% if 'actual_profit' in record %}
-                                {{ "%.2f"|format(record['actual_profit']) }}元
-                            {% else %}
-                                0.00元
-                            {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if record['type'] == 'redeem' and 'real_rate' in record %}
-                            {{ "%.2f"|format(record['real_rate']) }}%
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        <a href="/delete/{{ record['id'] }}" onclick="return confirm('确定要删除这条记录吗？')">删除</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <div class="total-profit">
-            <strong>总预计收益：{{ "%.2f"|format(total_profit) }}元</strong>
-            <strong>总实际收益：{{ "%.2f"|format(total_actual_profit) }}元</strong>
-            <strong>平均真实收益率：{{ "%.2f"|format(avg_real_rate) }}%</strong>
+<!-- Dashboard Metric Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm metric-card" style="background: linear-gradient(135deg, #4CAF50, #66BB6A);">
+            <div class="card-body text-white">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <small><i class="bi bi-cash-coin"></i> 总投入</small>
+                        <div class="fs-4 fw-bold mt-1">¥{{ "%.2f"|format(stats['total_invested']) }}</div>
+                    </div>
+                    <i class="bi bi-piggy-bank fs-1 opacity-50"></i>
+                </div>
+            </div>
         </div>
-    {% endif %}
-    
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm metric-card" style="background: linear-gradient(135deg, #2196F3, #64B5F6);">
+            <div class="card-body text-white">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <small><i class="bi bi-briefcase"></i> 持有中</small>
+                        <div class="fs-4 fw-bold mt-1">¥{{ "%.2f"|format(stats['holding_principal']) }}</div>
+                    </div>
+                    <i class="bi bi-graph-up-arrow fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm metric-card" style="background: linear-gradient(135deg, #FF9800, #FFB74D);">
+            <div class="card-body text-white">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <small><i class="bi bi-coin"></i> 累计收益</small>
+                        <div class="fs-4 fw-bold mt-1">¥{{ "%.2f"|format(stats['total_profit']) }}</div>
+                    </div>
+                    <i class="bi bi-graph-up-arrow fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm metric-card" style="background: linear-gradient(135deg, #9C27B0, #CE93D8);">
+            <div class="card-body text-white">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <small><i class="bi bi-percent"></i> 平均年化</small>
+                        <div class="fs-4 fw-bold mt-1">{{ "%.2f"|format(stats['avg_rate']) }}%</div>
+                    </div>
+                    <i class="bi bi-bar-chart-line fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left: Upcoming & Recent -->
+    <div class="col-lg-5">
+        <!-- Upcoming Maturities -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-bell text-warning"></i> 即将到期 <small class="text-muted fw-normal">(未来30天)</small>
+            </div>
+            <div class="card-body p-0">
+                {% if upcoming %}
+                <ul class="list-group list-group-flush">
+                    {% for item in upcoming %}
+                    {% set urgency = 'danger' if item['days_remaining'] <= 7 else 'warning' if item['days_remaining'] <= 14 else 'info' %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-small">{{ item['product_name'] }}</div>
+                            <small class="text-muted">{{ item['bank_name'] }}</small>
+                        </div>
+                        <div class="text-end">
+                            <div>¥{{ "%.2f"|format(item['amount']) }}</div>
+                            <span class="badge bg-{{ urgency }}">
+                                {{ item['days_remaining'] }}天后到期
+                            </span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-3 text-muted small">
+                    <i class="bi bi-check-circle text-success"></i> 近期无即将到期产品
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Redeems -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center fw-bold">
+                <span><i class="bi bi-clock-history"></i> 最近赎回</span>
+                <a href="/records" class="btn btn-sm btn-outline-secondary">查看全部</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_redeems %}
+                <ul class="list-group list-group-flush">
+                    {% for r in recent_redeems %}
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div>{{ r['product_name'] }}</div>
+                                <small class="text-muted">{{ r['redeem_date'] }}</small>
+                            </div>
+                            <div class="text-end">
+                                <div>¥{{ "%.2f"|format(r['redeem_amount']) }}</div>
+                                <small class="text-success">+¥{{ "%.2f"|format(r['actual_profit']) }}</small>
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-3 text-muted small">
+                    暂无赎回记录
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Holding Products -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center fw-bold">
+                <span><i class="bi bi-briefcase"></i> 持有中产品</span>
+                <a href="/records" class="btn btn-sm btn-outline-secondary">查看全部</a>
+            </div>
+            <div class="card-body p-0">
+                {% set holding_groups = grouped|selectattr('status', 'equalto', 'holding')|list %}
+                {% if holding_groups %}
+                <div class="list-group list-group-flush">
+                    {% for g in holding_groups %}
+                    {% set p = g['purchase'] %}
+                    <a href="/records" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>{{ p['product_name'] }}</strong>
+                                <span class="badge bg-primary ms-1">持有中</span>
+                                <br>
+                                <small class="text-muted">
+                                    ¥{{ "%.2f"|format(p['amount']) }} · {{ "%.2f"|format(p['annual_rate'] * 100) }}% · {{ p['duration'] }}天
+                                </small>
+                            </div>
+                            <div class="text-end">
+                                <div class="small">到期: {{ p['end_date'] }}</div>
+                                <small class="text-info">预计: ¥{{ "%.2f"|format(calculate_auto_profit(p['amount'], p['annual_rate'], p['duration'])) }}</small>
+                            </div>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted small">
+                    <i class="bi bi-inbox"></i> 暂无持有中产品
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mini Profit Trend Chart -->
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center fw-bold">
+        <span><i class="bi bi-graph-up"></i> 收益趋势</span>
+        <a href="/statistics" class="btn btn-sm btn-outline-secondary">查看详细</a>
+    </div>
+    <div class="card-body" style="height: 200px;">
+        <canvas id="miniProfitChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mini monthly profit chart on dashboard
+const miniLabels = JSON.parse('{{ monthly_labels|tojson|safe }}');
+const miniProfits = JSON.parse('{{ monthly_profits|tojson|safe }}');
+
+if (miniLabels && miniLabels.length > 0) {
+    new Chart(document.getElementById('miniProfitChart'), {
+        type: 'line',
+        data: {
+            labels: miniLabels,
+            datasets: [{
+                label: '每月收益',
+                data: miniProfits,
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#4CAF50',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { callback: v => '¥' + v, font: { size: 10 } } },
+                x: { ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+}
+</script>
 {% endblock %}

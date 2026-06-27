@@ -1,94 +1,244 @@
 {% extends "base.html" %}
 
 {% block content %}
-        <div class="chart-container">
-            <canvas id="monthlyProfitChart"></canvas>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-bar-chart-line"></i> 统计分析</h4>
+    <a href="/records" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> 返回记录</a>
+</div>
+
+<!-- Time Range Filter -->
+<form method="GET" action="/statistics" class="row g-2 mb-4">
+    <div class="col-auto">
+        <div class="btn-group" role="group">
+            <a href="/statistics?range=all" class="btn btn-sm {{ 'btn-success' if range_type == 'all' else 'btn-outline-secondary' }}">全部</a>
+            <a href="/statistics?range=year" class="btn btn-sm {{ 'btn-success' if range_type == 'year' else 'btn-outline-secondary' }}">本年</a>
+            <a href="/statistics?range=month" class="btn btn-sm {{ 'btn-success' if range_type == 'month' else 'btn-outline-secondary' }}">本月</a>
+            <a href="/statistics?range=custom&from_date={{ from_date }}&to_date={{ to_date }}" class="btn btn-sm {{ 'btn-success' if range_type == 'custom' else 'btn-outline-secondary' }}"
+               onclick="return showCustomRange()">自定义</a>
         </div>
-        <div class="chart-container">
-            <canvas id="yearlyProfitChart"></canvas>
+    </div>
+    <div id="custom-range" class="col-auto" style="display: {{ 'flex' if range_type == 'custom' else 'none' }};">
+        <input type="date" class="form-control form-control-sm" name="from_date" value="{{ from_date }}" style="width:140px">
+        <span class="mx-1 align-self-center">至</span>
+        <input type="date" class="form-control form-control-sm" name="to_date" value="{{ to_date }}" style="width:140px">
+        <button type="submit" class="btn btn-sm btn-success ms-1">确定</button>
+    </div>
+</form>
+
+<!-- Summary Cards -->
+<div class="row g-2 mb-4">
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">总投资笔数</small>
+            <strong>{{ summary['total_count'] }}</strong>
         </div>
-        <div class="chart-container">
-            <h2>理财产品分布</h2>
-            <canvas id="productDistributionChart"></canvas>
+    </div>
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">总投资金额</small>
+            <strong>¥{{ "%.0f"|format(summary['total_invested']) }}</strong>
         </div>
+    </div>
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">平均持有</small>
+            <strong>{{ summary['avg_days'] }}天</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">平均年化</small>
+            <strong>{{ "%.2f"|format(summary['avg_rate']) }}%</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">最高收益</small>
+            <strong class="text-success">¥{{ "%.0f"|format(summary['max_profit']) }}</strong>
+        </div>
+    </div>
+    <div class="col-md-2 col-4">
+        <div class="card border-0 bg-light text-center py-2">
+            <small class="text-muted">累计收益</small>
+            <strong class="text-success">¥{{ "%.0f"|format(summary['total_profit']) }}</strong>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Monthly Profit Chart -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">月度收益趋势</div>
+            <div class="card-body">
+                <canvas id="monthlyProfitChart" height="220"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Ranking -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between">
+                <span>产品收益排行榜</span>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary active" id="sort-profit" onclick="sortRanking('profit')">按收益</button>
+                    <button class="btn btn-outline-secondary" id="sort-rate" onclick="sortRanking('rate')">按年化</button>
+                </div>
+            </div>
+            <div class="card-body p-0" id="ranking-list">
+                <ul class="list-group list-group-flush" id="ranking-profit">
+                    {% for name, info in ranking_by_profit[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <div>
+                            {% if loop.index == 1 %}<span class="me-1">🥇</span>
+                            {% elif loop.index == 2 %}<span class="me-1">🥈</span>
+                            {% elif loop.index == 3 %}<span class="me-1">🥉</span>
+                            {% else %}<small class="text-muted me-1">{{ loop.index }}.</small>{% endif %}
+                            <span class="small">{{ name }}</span>
+                        </div>
+                        <div class="text-end">
+                            <strong class="text-success small">+¥{{ "%.0f"|format(info['profit']) }}</strong>
+                            <small class="text-muted ms-1">{{ "%.2f"|format(info['rate']) }}%</small>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <ul class="list-group list-group-flush" id="ranking-rate" style="display:none;">
+                    {% for name, info in ranking_by_rate[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <div>
+                            {% if loop.index == 1 %}<span class="me-1">🥇</span>
+                            {% elif loop.index == 2 %}<span class="me-1">🥈</span>
+                            {% elif loop.index == 3 %}<span class="me-1">🥉</span>
+                            {% else %}<small class="text-muted me-1">{{ loop.index }}.</small>{% endif %}
+                            <span class="small">{{ name }}</span>
+                        </div>
+                        <div class="text-end">
+                            <strong class="text-success small">{{ "%.2f"|format(info['rate']) }}%</strong>
+                            <small class="text-muted ms-1">+¥{{ "%.0f"|format(info['profit']) }}</small>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-2">
+    <!-- Yearly Profit -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">年度收益趋势</div>
+            <div class="card-body">
+                <canvas id="yearlyProfitChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bank Distribution -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">银行投资分布</div>
+            <div class="card-body">
+                <canvas id="bankDistributionChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
-    // 每月收益图表
-    const ctx1 = document.getElementById('monthlyProfitChart').getContext('2d');
-    const chartData1 = {
-        type: 'bar',
-        data: {
-            labels: JSON.parse('{{ monthly_labels|tojson|safe }}'),
-            datasets: [{
-                label: '每月收益',
-                data: JSON.parse('{{ monthly_profits|tojson|safe }}'),
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    };
-    new Chart(ctx1, chartData1);
+function showCustomRange() {
+    document.getElementById('custom-range').style.display = 'flex';
+    return false;
+}
 
-    // 理财产品分布图表
-    const ctx2 = document.getElementById('productDistributionChart').getContext('2d');
-    const chartData2 = {
-        type: 'pie',
-        data: {
-            labels: JSON.parse('{{ product_names|tojson|safe }}'),
-            datasets: [{
-                label: '投资金额',
-                data: JSON.parse('{{ product_amounts|tojson|safe }}'),
-                backgroundColor: [
-                    'rgba(255, 99, 132, 0.2)',
-                    'rgba(54, 162, 235, 0.2)',
-                    'rgba(255, 206, 86, 0.2)',
-                    'rgba(75, 192, 192, 0.2)',
-                    'rgba(153, 102, 255, 0.2)'
-                ],
-                borderColor: [
-                    'rgba(255, 99, 132, 1)',
-                    'rgba(54, 162, 235, 1)',
-                    'rgba(255, 206, 86, 1)',
-                    'rgba(75, 192, 192, 1)',
-                    'rgba(153, 102, 255, 1)'
-                ],
-                borderWidth: 1
-            }]
-        }
-    };
-    new Chart(ctx2, chartData2);
+function sortRanking(type) {
+    document.getElementById('sort-profit').classList.toggle('active', type === 'profit');
+    document.getElementById('sort-rate').classList.toggle('active', type === 'rate');
+    document.getElementById('ranking-profit').style.display = type === 'profit' ? '' : 'none';
+    document.getElementById('ranking-rate').style.display = type === 'rate' ? '' : 'none';
+}
 
-    // 年度收益图表
-    const ctx3 = document.getElementById('yearlyProfitChart').getContext('2d');
-    const chartData3 = {
-        type: 'line',
-        data: {
-            labels: JSON.parse('{{ yearly_labels|tojson|safe }}'),
-            datasets: [{
-                label: '年度收益',
-                data: JSON.parse('{{ yearly_profits|tojson|safe }}'),
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderColor: 'rgba(75, 192, 192, 1)',
-                borderWidth: 2,
-                fill: true
-            }]
-        },
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
+// Monthly profit chart
+new Chart(document.getElementById('monthlyProfitChart'), {
+    type: 'bar',
+    data: {
+        labels: JSON.parse('{{ monthly_labels|tojson|safe }}'),
+        datasets: [{
+            label: '每月收益',
+            data: JSON.parse('{{ monthly_profits|tojson|safe }}'),
+            backgroundColor: 'rgba(76, 175, 80, 0.6)',
+            borderColor: 'rgba(76, 175, 80, 1)',
+            borderWidth: 1,
+            borderRadius: 4,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, ticks: { callback: v => '¥' + v } }
         }
-    };
-    new Chart(ctx3, chartData3);
+    }
+});
+
+// Yearly profit chart
+new Chart(document.getElementById('yearlyProfitChart'), {
+    type: 'line',
+    data: {
+        labels: JSON.parse('{{ yearly_labels|tojson|safe }}'),
+        datasets: [{
+            label: '年度收益',
+            data: JSON.parse('{{ yearly_profits|tojson|safe }}'),
+            borderColor: 'rgba(33, 150, 243, 1)',
+            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, ticks: { callback: v => '¥' + v } }
+        }
+    }
+});
+
+// Bank distribution chart (horizontal bar)
+const bankLabels = JSON.parse('{{ bank_data|map(attribute=0)|list|tojson|safe }}');
+const bankValues = JSON.parse('{{ bank_data|map(attribute=1)|list|tojson|safe }}');
+const bgColors = bankLabels.map((_, i) => {
+    const colors = ['#4CAF50','#2196F3','#FF9800','#9C27B0','#F44336','#00BCD4','#795548','#607D8B'];
+    return colors[i % colors.length];
+});
+
+new Chart(document.getElementById('bankDistributionChart'), {
+    type: 'bar',
+    data: {
+        labels: bankLabels,
+        datasets: [{
+            label: '投资金额',
+            data: bankValues,
+            backgroundColor: bgColors,
+            borderWidth: 0,
+            borderRadius: 4,
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { beginAtZero: true, ticks: { callback: v => '¥' + v.toLocaleString() } }
+        }
+    }
+});
 </script>
 {% endblock %}

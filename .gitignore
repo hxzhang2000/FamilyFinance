@@ -20,10 +20,16 @@ venv.bak/
 # PyInstaller
 build/
 dist/
-*.spec
 
-# Data files (optional - uncomment if you don't want to track data)
-# finance_data.json
+# Obsidian vault config
+.obsidian/
+
+# User data
+data/
+finance_data_backup.json
+
+# One-time migration script
+migrate_data.py
 
 # Docker
 dockerimages/

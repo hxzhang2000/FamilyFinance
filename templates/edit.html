@@ -1,30 +1,123 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h2>编辑理财记录</h2>
-    <form method="POST">
-        <div class="form-group">
-            <label>产品名称：</label>
-            <input type="text" value="{{ record['product_name'] }}" disabled>
-        </div>
-        
-        <div class="form-group">
-            <label>购买金额：</label>
-            <input type="text" value="{{ "%.2f"|format(record['amount']) }}元" disabled>
-        </div>
-        
-        <div class="form-group">
-            <label>预计收益：</label>
-    <input type="text" value="{{ "%.2f"|format(record['amount'] * (1 + record['annual_rate']) ** record['duration'] - record['amount']) }}元" disabled>
-        </div>
-        
-        <div class="form-group">
-            <label for="actual_profit">实际收益：</label>
-            <input type="number" step="0.01" id="actual_profit" name="actual_profit" 
-                   value="{{ record['actual_profit'] if record['actual_profit'] else '' }}" required>
-        </div>
-        
-        <button type="submit" class="btn-submit">保存</button>
-        <a href="{{ url_for('index') }}" class="btn-cancel">取消</a>
-    </form>
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h4 class="mb-3"><i class="bi bi-pencil"></i> 编辑记录</h4>
+
+        <form method="POST" class="card shadow-sm">
+            <div class="card-body">
+                {% if record['type'] == 'purchase' %}
+                <h6 class="text-success border-bottom pb-2"><i class="bi bi-cart-plus"></i> 买入记录</h6>
+
+                <div class="mb-3">
+                    <label for="product_name" class="form-label">理财产品名称</label>
+                    <input type="text" class="form-control" id="product_name" name="product_name"
+                           value="{{ record['product_name'] }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label for="bank_name" class="form-label">银行 / 机构</label>
+                    <input type="text" class="form-control" id="bank_name" name="bank_name"
+                           list="bank-list" value="{{ record.get('bank_name', '未知银行') }}">
+                    <datalist id="bank-list">
+                        <option value="交通银行">
+                        <option value="民生银行">
+                        <option value="工商银行">
+                        <option value="建设银行">
+                        <option value="农业银行">
+                        <option value="招商银行">
+                        <option value="中信银行">
+                        <option value="兴业银行">
+                        <option value="浦发银行">
+                        <option value="其他">
+                    </datalist>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="amount" class="form-label">投资金额（元）</label>
+                        <input type="number" step="0.01" class="form-control" id="amount" name="amount"
+                               value="{{ record['amount'] }}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="annual_rate" class="form-label">年化利率（%）</label>
+                        <input type="number" step="0.01" class="form-control" id="annual_rate" name="annual_rate"
+                               value="{{ "%.4f"|format(record['annual_rate'] * 100) }}" required
+                               title="输入百分比，如1.75表示1.75%">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="duration" class="form-label">期限（天）</label>
+                        <input type="number" class="form-control" id="duration" name="duration"
+                               value="{{ record['duration'] }}" required>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="purchase_date" class="form-label">购买日期</label>
+                        <input type="date" class="form-control" id="purchase_date" name="purchase_date"
+                               value="{{ record['purchase_date'] }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">到期日期</label>
+                        <input type="text" class="form-control" value="{{ record['end_date'] }}" disabled>
+                    </div>
+                </div>
+
+                {% else %}
+                <h6 class="text-warning border-bottom pb-2"><i class="bi bi-cart-dash"></i> 赎回记录</h6>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">产品名称</label>
+                        <input type="text" class="form-control" value="{{ record['product_name'] }}" disabled>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">关联购买记录ID</label>
+                        <input type="text" class="form-control" value="{{ record['purchase_record_id'] }}" disabled>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="product_name" class="form-label">产品名称（可修改）</label>
+                    <input type="text" class="form-control" id="product_name" name="product_name"
+                           value="{{ record['product_name'] }}">
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label for="actual_profit" class="form-label">实际收益</label>
+                        <input type="number" step="0.01" class="form-control" id="actual_profit" name="actual_profit"
+                               value="{{ record.get('actual_profit', 0) }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">赎回日期</label>
+                        <input type="date" class="form-control" name="redeem_date"
+                               value="{{ record.get('redeem_date', '') }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="profit_calc" class="form-label">计算方式</label>
+                        <select class="form-select" id="profit_calc" name="profit_calc">
+                            <option value="auto" {{ 'selected' if record.get('profit_calc') == 'auto' else '' }}>自动</option>
+                            <option value="manual" {{ 'selected' if record.get('profit_calc') == 'manual' else '' }}>手动</option>
+                        </select>
+                    </div>
+                </div>
+
+                <input type="hidden" name="amount" value="{{ record.get('amount', 0) }}">
+                <input type="hidden" name="annual_rate" value="{{ record.get('annual_rate', 0) }}">
+                <input type="hidden" name="duration" value="{{ record.get('duration', 0) }}">
+                <input type="hidden" name="purchase_date" value="{{ record.get('purchase_date', '') }}">
+                <input type="hidden" name="bank_name" value="{{ record.get('bank_name', '') }}">
+                {% endif %}
+
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> 保存</button>
+                    <a href="/" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i> 取消</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}

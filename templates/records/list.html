@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-card-list"></i> 全部记录</h4>
+    <div class="d-flex gap-1">
+        <div class="btn-group btn-group-sm me-1" role="group">
+            <a href="/records?mode=card{% if search %}&search={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort_by != 'date' %}&sort_by={{ sort_by }}{% endif %}{% if sort_order != 'desc' %}&sort_order={{ sort_order }}{% endif %}"
+               class="btn btn-outline-secondary {{ 'active' if view_mode == 'card' else '' }}" title="卡片视图">
+                <i class="bi bi-grid-3x3-gap"></i>
+            </a>
+            <a href="/records?mode=table{% if search %}&search={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if sort_by != 'date' %}&sort_by={{ sort_by }}{% endif %}{% if sort_order != 'desc' %}&sort_order={{ sort_order }}{% endif %}"
+               class="btn btn-outline-secondary {{ 'active' if view_mode == 'table' else '' }}" title="表格视图">
+                <i class="bi bi-list-ul"></i>
+            </a>
+        </div>
+        <a href="/export?format=excel" class="btn btn-outline-success btn-sm me-1">
+            <i class="bi bi-download"></i> Excel
+        </a>
+        <a href="/export?format=csv" class="btn btn-outline-secondary btn-sm me-1">
+            <i class="bi bi-filetype-csv"></i> CSV
+        </a>
+        <a href="/add" class="btn btn-success btn-sm">
+            <i class="bi bi-plus-circle"></i> 添加记录
+        </a>
+    </div>
+</div>
+
+<!-- Search & Filter -->
+<form method="GET" action="/records" class="mb-3">
+    <input type="hidden" name="mode" value="{{ view_mode }}">
+    <!-- Row 1: Search + Status + Submit -->
+    <div class="row g-2">
+        <div class="col-md-5">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" name="search" placeholder="搜索产品名或银行..." value="{{ search }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="status">
+                <option value="">全部状态</option>
+                <option value="holding" {{ 'selected' if status_filter == 'holding' else '' }}>持有中</option>
+                <option value="partial" {{ 'selected' if status_filter == 'partial' else '' }}>部分赎回</option>
+                <option value="completed" {{ 'selected' if status_filter == 'completed' else '' }}>已完结</option>
+                <option value="expired" {{ 'selected' if status_filter == 'expired' else '' }}>已到期</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> 筛选</button>
+        </div>
+        <div class="col-md-2">
+            <a href="/records?mode={{ view_mode }}" class="btn btn-outline-secondary w-100"><i class="bi bi-x-circle"></i> 重置</a>
+        </div>
+    </div>
+    <!-- Row 2: Sort options -->
+    <div class="row g-2 mt-2">
+        <div class="col-md-3">
+            <select class="form-select" name="sort_by" onchange="this.form.submit()">
+                <option value="date" {{ 'selected' if sort_by == 'date' else '' }}>按购买日期</option>
+                <option value="amount" {{ 'selected' if sort_by == 'amount' else '' }}>按金额</option>
+                <option value="rate" {{ 'selected' if sort_by == 'rate' else '' }}>按年化</option>
+                <option value="status" {{ 'selected' if sort_by == 'status' else '' }}>按状态</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="sort_order" onchange="this.form.submit()">
+                <option value="desc" {{ 'selected' if sort_order == 'desc' else '' }}>倒序（新→旧）</option>
+                <option value="asc" {{ 'selected' if sort_order == 'asc' else '' }}>正序（旧→新）</option>
+            </select>
+        </div>
+        <div class="col-md-7">
+            <small class="text-muted align-middle" style="line-height: 38px;">
+                <i class="bi bi-arrow-down-up"></i> 共 {{ total }} 项投资
+            </small>
+        </div>
+    </div>
+</form>
+
+{% if total == 0 %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
+    <p class="text-muted mt-2">暂无记录</p>
+    <a href="/add" class="btn btn-success">添加第一条记录</a>
+</div>
+{% else %}
+{% set status_map = {
+    'holding': {'label': '持有中', 'class': 'bg-primary'},
+    'partial': {'label': '部分赎回', 'class': 'bg-warning text-dark'},
+    'completed': {'label': '已完结', 'class': 'bg-success'},
+    'expired': {'label': '已到期', 'class': 'bg-secondary'}
+} %}
+
+{% if view_mode == 'table' %}
+<!-- Flat Table View -->
+<div class="table-responsive">
+    <table class="table table-hover table-bordered align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>状态</th>
+                <th>产品名称</th>
+                <th>银行</th>
+                <th>投资金额</th>
+                <th>年化率</th>
+                <th>期限</th>
+                <th>购买日</th>
+                <th>到期日</th>
+                <th>赎回金额</th>
+                <th>实际收益</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for group in grouped %}
+            {% set p = group['purchase'] %}
+            {% set status = group['status'] %}
+            <tr>
+                <td><span class="badge {{ status_map[status]['class'] }}">{{ status_map[status]['label'] }}</span></td>
+                <td><strong>{{ p['product_name'] }}</strong></td>
+                <td>{% if p.get('bank_name') and p['bank_name'] != '未知银行' %}{{ p['bank_name'] }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                <td>¥{{ "%.2f"|format(p['amount']) }}</td>
+                <td>{{ "%.2f"|format(p['annual_rate'] * 100) }}%</td>
+                <td>{{ p['duration'] }}天</td>
+                <td>{{ p['purchase_date'] }}</td>
+                <td>{{ p['end_date'] }}</td>
+                <td>{% if group['total_redeemed'] > 0 %}¥{{ "%.2f"|format(group['total_redeemed']) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                <td>{% if group['redeems'] %}<span class="text-success">+¥{{ "%.2f"|format(group['redeems']|sum(attribute='actual_profit')) }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                <td>
+                    <div class="d-flex gap-1">
+                        {% if status in ('holding', 'partial') %}
+                        <a href="/add?purchase_id={{ p['id'] }}" class="btn btn-sm btn-outline-success py-0" title="赎回"><i class="bi bi-arrow-return-left"></i></a>
+                        {% endif %}
+                        <a href="/edit/{{ p['id'] }}" class="btn btn-sm btn-outline-primary py-0" title="编辑"><i class="bi bi-pencil"></i></a>
+                        <a href="/delete/{{ p['id'] }}" class="btn btn-sm btn-outline-danger py-0" title="删除"
+                           onclick="return confirm('确定要删除「{{ p['product_name'] }}」吗？')"><i class="bi bi-trash"></i></a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<!-- Card View -->
+{% for group in grouped %}
+{% set p = group['purchase'] %}
+{% set status = group['status'] %}
+{% set redeems = group['redeems'] %}
+
+<!-- Status badge colors -->
+{% set status_map = {
+    'holding': {'label': '持有中', 'class': 'bg-primary'},
+    'partial': {'label': '部分赎回', 'class': 'bg-warning text-dark'},
+    'completed': {'label': '已完结', 'class': 'bg-success'},
+    'expired': {'label': '已到期', 'class': 'bg-secondary'}
+} %}
+
+<div class="card mb-3 record-card">
+    <div class="card-header d-flex justify-content-between align-items-center py-2"
+         data-bs-toggle="collapse" data-bs-target="#group-{{ p['id'] }}" style="cursor: pointer;">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge {{ status_map[status]['class'] }}">{{ status_map[status]['label'] }}</span>
+            <strong class="fs-6">{{ p['product_name'] }}</strong>
+            {% if p.get('bank_name') and p['bank_name'] != '未知银行' %}
+            <span class="badge bg-light text-dark border">{{ p['bank_name'] }}</span>
+            {% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <small class="text-muted">¥{{ "%.2f"|format(p['amount']) }}</small>
+            <i class="bi bi-chevron-down"></i>
+        </div>
+    </div>
+
+    <div id="group-{{ p['id'] }}" class="collapse show">
+        <div class="card-body">
+            <!-- Purchase details -->
+            <div class="row g-2 mb-2 small">
+                <div class="col-md-3"><span class="text-muted">年化:</span> {{ "%.2f"|format(p['annual_rate'] * 100) }}%</div>
+                <div class="col-md-3"><span class="text-muted">期限:</span> {{ p['duration'] }}天</div>
+                <div class="col-md-3"><span class="text-muted">购买日:</span> {{ p['purchase_date'] }}</div>
+                <div class="col-md-3"><span class="text-muted">到期日:</span> {{ p['end_date'] }}</div>
+            </div>
+
+            <!-- Redemption records -->
+            {% if redeems %}
+            <div class="table-responsive mt-2">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>赎回日期</th>
+                            <th>赎回金额</th>
+                            <th>实际收益</th>
+                            <th>真实年化</th>
+                            <th>计算方式</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in redeems %}
+                        {% set days = (r['redeem_date']|string and r['purchase_date']|string) %}
+                        {% set _days = ((r['redeem_date']|string, r['purchase_date']|string) if False else 0) %}
+                        <tr>
+                            <td>{{ r['redeem_date'] }}</td>
+                            <td>¥{{ "%.2f"|format(r['redeem_amount']) }}</td>
+                            <td class="text-success fw-bold">+¥{{ "%.2f"|format(r['actual_profit']) }}</td>
+                            <td>
+                        {{ "%.2f"|format(r['_real_rate']) if r.get('_real_rate') is defined and r['_real_rate'] > 0 else '-' }}{{ '%' if r.get('_real_rate') is defined and r['_real_rate'] > 0 else '' }}
+                            </td>
+                            <td><span class="badge bg-{{ 'info' if r['profit_calc'] == 'auto' else 'secondary' }}">{{ '自动' if r['profit_calc'] == 'auto' else '手动' }}</span></td>
+                            <td>
+                                <a href="/edit/{{ r['id'] }}" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-pencil"></i></a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Summary -->
+            <div class="mt-2 p-2 bg-light rounded small">
+                <span class="text-muted">本组汇总:</span>
+                <span class="ms-2">总赎回: <strong>¥{{ "%.2f"|format(group['total_redeemed']) }}</strong></span>
+                <span class="ms-2">剩余: <strong>¥{{ "%.2f"|format(group['remaining']) }}</strong></span>
+                <span class="ms-2">总收益: <strong class="text-success">+¥{{ "%.2f"|format(redeems|sum(attribute='actual_profit')) }}</strong></span>
+            </div>
+            {% else %}
+            <div class="mt-2">
+                <span class="text-muted small">暂未赎回</span>
+                <span class="badge bg-light text-muted border ms-2">预计收益: ¥{{ "%.2f"|format(calculate_auto_profit(p['amount'], p['annual_rate'], p['duration'])) }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Card footer with actions -->
+        <div class="card-footer bg-white py-2 d-flex gap-2 justify-content-end">
+            {% if status in ('holding', 'partial') %}
+            <a href="/add?purchase_id={{ p['id'] }}" class="btn btn-sm btn-outline-success"><i class="bi bi-arrow-return-left"></i> 赎回</a>
+            {% endif %}
+            <a href="/edit/{{ p['id'] }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i> 编辑</a>
+            <a href="/delete/{{ p['id'] }}" class="btn btn-sm btn-outline-danger"
+               onclick="return confirm('确定要删除「{{ p['product_name'] }}」吗？{% if redeems %}该产品有 {{ redeems|length }} 条赎回记录，删除后赎回记录将一并删除。{% endif %}')">
+               <i class="bi bi-trash"></i> 删除
+            </a>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Enable delete confirmation for redeem records too
+document.querySelectorAll('[data-delete-redeem]').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+        if (!confirm('确定要删除这条赎回记录吗？')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
+{% endblock %}
