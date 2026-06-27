@@ -1,5 +1,7 @@
 # FamilyFinance 完整开发方案
 
+> **版本：v1.1** | 更新日期：2026-06-27
+
 ## 一、项目概述
 
 ### 1.1 项目背景
@@ -53,11 +55,14 @@ FamilyFinance 是一个家庭理财管理系统，用于记录和管理理财产
 FamilyFinance/
 ├── app.py                    # Flask 应用入口
 ├── config.py                 # 配置文件
+├── constants.py              # 常量定义
 ├── requirements.txt          # 依赖管理
+├── .env.example              # 环境变量模板
 │
 ├── models/                   # 数据模型
 │   ├── __init__.py
 │   ├── record.py            # 记录模型（Purchase, Redeem）
+│   ├── schemas.py           # Marshmallow 数据验证
 │   └── settings.py          # 设置模型
 │
 ├── services/                 # 业务逻辑层
@@ -70,6 +75,7 @@ FamilyFinance/
 ├── utils/                    # 工具函数
 │   ├── __init__.py
 │   ├── validators.py        # 数据验证
+│   ├── error_handlers.py    # 统一错误处理
 │   ├── formatters.py        # 格式化工具
 │   └── helpers.py           # 辅助函数
 │
@@ -104,6 +110,8 @@ FamilyFinance/
 │   └── backups/             # 备份目录
 │
 ├── tests/                    # 测试文件
+│   ├── conftest.py          # 测试配置和 Fixtures
+│   ├── factories.py         # 测试数据工厂
 │   ├── test_models.py
 │   ├── test_services.py
 │   └── test_routes.py
@@ -161,7 +169,9 @@ FamilyFinance/
   
   // 系统字段
   "created_at": "2025-01-09T10:30:00",
-  "updated_at": "2025-01-09T10:30:00"
+  "updated_at": "2025-01-09T10:30:00",
+  "deleted": false,
+  "deleted_at": null
 }
 ```
 
@@ -189,7 +199,9 @@ FamilyFinance/
   
   // 系统字段
   "created_at": "2025-04-17T09:00:00",
-  "updated_at": "2025-04-17T09:00:00"
+  "updated_at": "2025-04-17T09:00:00",
+  "deleted": false,
+  "deleted_at": null
 }
 ```
 
@@ -232,6 +244,7 @@ FamilyFinance/
 │ end_date         │       │ redeem_type      │
 │ bank_name        │       │ fees             │
 │ risk_level       │       │ tax              │
+│ deleted          │       │ deleted          │
 │ ...              │       │ ...              │
 └──────────────────┘       └──────────────────┘
         │
@@ -244,6 +257,211 @@ FamilyFinance/
 │ redeems[]        │
 │ summary          │
 └──────────────────┘
+```
+
+### 3.3 常量定义
+
+**constants.py**
+```python
+"""项目常量定义"""
+
+# 日期格式
+DATE_FORMAT = '%Y-%m-%d'
+DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
+
+# 记录类型
+RECORD_TYPE_PURCHASE = 'purchase'
+RECORD_TYPE_REDEEM = 'redeem'
+
+# 投资状态
+STATUS_HOLDING = 'holding'
+STATUS_PARTIAL = 'partial'
+STATUS_COMPLETED = 'completed'
+STATUS_EXPIRED = 'expired'
+
+# 风险等级
+RISK_LOW = 'low'
+RISK_MEDIUM = 'medium'
+RISK_HIGH = 'high'
+
+# 赎回类型
+REDEEM_MATURITY = 'maturity'
+REDEEM_EARLY = 'early'
+REDEEM_PARTIAL = 'partial'
+
+# 收益计算方式
+PROFIT_CALC_AUTO = 'auto'
+PROFIT_CALC_MANUAL = 'manual'
+
+# 默认设置
+DEFAULT_ITEMS_PER_PAGE = 20
+DEFAULT_MATURITY_REMINDER_DAYS = 3
+
+# 提醒相关
+MATURITY_CHECK_DAYS = 30  # 检查未来30天到期的产品
+```
+
+### 3.4 数据验证层
+
+**models/schemas.py**
+```python
+"""Marshmallow 数据验证 Schema"""
+from marshmallow import Schema, fields, validate, post_load
+from datetime import datetime
+from typing import Dict, Any
+
+from constants import (
+    DATE_FORMAT, RECORD_TYPE_PURCHASE, RECORD_TYPE_REDEEM,
+    RISK_LOW, RISK_MEDIUM, RISK_HIGH,
+    REDEEM_MATURITY, REDEEM_EARLY, REDEEM_PARTIAL,
+    PROFIT_CALC_AUTO, PROFIT_CALC_MANUAL
+)
+
+
+class PurchaseSchema(Schema):
+    """购买记录验证 Schema"""
+    id = fields.Str(load_default=None)
+    type = fields.Str(validate=validate.Equal(RECORD_TYPE_PURCHASE))
+    product_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    amount = fields.Float(required=True, validate=validate.Range(min=0.01))
+    annual_rate = fields.Float(required=True, validate=validate.Range(min=0, max=1))
+    duration = fields.Int(required=True, validate=validate.Range(min=1, max=36500))
+    purchase_date = fields.Date(required=True, format=DATE_FORMAT)
+    end_date = fields.Date(required=True, format=DATE_FORMAT)
+    bank_name = fields.Str(load_default=None, validate=validate.Length(max=50))
+    product_code = fields.Str(load_default=None, validate=validate.Length(max=50))
+    risk_level = fields.Str(
+        load_default=RISK_MEDIUM,
+        validate=validate.OneOf([RISK_LOW, RISK_MEDIUM, RISK_HIGH])
+    )
+    category = fields.Str(load_default='固定收益', validate=validate.Length(max=50))
+    tags = fields.List(fields.Str(), load_default=list)
+    notes = fields.Str(load_default='', validate=validate.Length(max=500))
+    created_at = fields.DateTime(load_default=None)
+    updated_at = fields.DateTime(load_default=None)
+    deleted = fields.Bool(load_default=False)
+    deleted_at = fields.DateTime(load_default=None)
+
+
+class RedeemSchema(Schema):
+    """赎回记录验证 Schema"""
+    id = fields.Str(load_default=None)
+    type = fields.Str(validate=validate.Equal(RECORD_TYPE_REDEEM))
+    purchase_record_id = fields.Str(required=True)
+    redeem_amount = fields.Float(required=True, validate=validate.Range(min=0.01))
+    redeem_date = fields.Date(required=True, format=DATE_FORMAT)
+    actual_profit = fields.Float(required=True)
+    profit_calc = fields.Str(
+        load_default=PROFIT_CALC_AUTO,
+        validate=validate.OneOf([PROFIT_CALC_AUTO, PROFIT_CALC_MANUAL])
+    )
+    redeem_type = fields.Str(
+        load_default=REDEEM_MATURITY,
+        validate=validate.OneOf([REDEEM_MATURITY, REDEEM_EARLY, REDEEM_PARTIAL])
+    )
+    redeem_reason = fields.Str(load_default='', validate=validate.Length(max=200))
+    fees = fields.Float(load_default=0.0, validate=validate.Range(min=0))
+    tax = fields.Float(load_default=0.0, validate=validate.Range(min=0))
+    net_profit = fields.Float(load_default=0.0)
+    settlement_date = fields.Date(load_default=None, format=DATE_FORMAT)
+    transaction_id = fields.Str(load_default=None, validate=validate.Length(max=50))
+    created_at = fields.DateTime(load_default=None)
+    updated_at = fields.DateTime(load_default=None)
+    deleted = fields.Bool(load_default=False)
+    deleted_at = fields.DateTime(load_default=None)
+
+
+# Schema 实例
+purchase_schema = PurchaseSchema()
+purchases_schema = PurchaseSchema(many=True)
+redeem_schema = RedeemSchema()
+redeems_schema = RedeemSchema(many=True)
+```
+
+### 3.5 统一错误处理
+
+**utils/error_handlers.py**
+```python
+"""统一错误处理模块"""
+from flask import jsonify
+from typing import Tuple, Dict, Any
+
+
+class AppError(Exception):
+    """应用自定义异常基类"""
+    def __init__(self, message: str, code: int = 400, details: Any = None):
+        self.message = message
+        self.code = code
+        self.details = details
+        super().__init__(self.message)
+
+
+class NotFoundError(AppError):
+    """资源未找到"""
+    def __init__(self, resource: str, resource_id: str):
+        super().__init__(
+            message=f'{resource} 未找到: {resource_id}',
+            code=404
+        )
+
+
+class ValidationError(AppError):
+    """数据验证错误"""
+    def __init__(self, message: str, details: Any = None):
+        super().__init__(message=message, code=400, details=details)
+
+
+class BusinessError(AppError):
+    """业务逻辑错误"""
+    def __init__(self, message: str, code: int = 400):
+        super().__init__(message=message, code=code)
+
+
+def register_error_handlers(app):
+    """注册全局错误处理器"""
+    
+    @app.errorhandler(AppError)
+    def handle_app_error(error: AppError) -> Tuple[Dict, int]:
+        response = {
+            'success': False,
+            'error': {
+                'message': error.message,
+                'code': error.code
+            }
+        }
+        if error.details:
+            response['error']['details'] = error.details
+        return jsonify(response), error.code
+    
+    @app.errorhandler(404)
+    def not_found(error) -> Tuple[Dict, int]:
+        return jsonify({
+            'success': False,
+            'error': {
+                'message': '资源未找到',
+                'code': 404
+            }
+        }), 404
+    
+    @app.errorhandler(405)
+    def method_not_allowed(error) -> Tuple[Dict, int]:
+        return jsonify({
+            'success': False,
+            'error': {
+                'message': '请求方法不允许',
+                'code': 405
+            }
+        }), 405
+    
+    @app.errorhandler(500)
+    def internal_error(error) -> Tuple[Dict, int]:
+        return jsonify({
+            'success': False,
+            'error': {
+                'message': '服务器内部错误',
+                'code': 500
+            }
+        }), 500
 ```
 
 ---
@@ -765,44 +983,99 @@ class InvestmentGroup:
 
 **app.py**
 ```python
+import os
 from flask import Flask, render_template, request, jsonify
+from flask_wtf.csrf import CSRFProtect
+from dotenv import load_dotenv
+
 from models.record import PurchaseRecord, RedeemRecord
 from services.record_service import RecordService
+from utils.error_handlers import register_error_handlers
 
+# 加载环境变量
+load_dotenv()
+
+# 创建 Flask 应用
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
 
+# 安全配置
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # CSRF token 有效期1小时
+
+# 初始化 CSRF 保护
+csrf = CSRFProtect(app)
+
+# 注册错误处理器
+register_error_handlers(app)
+
+# 初始化服务
 record_service = RecordService()
+
 
 @app.route('/')
 def index():
     """首页/仪表盘"""
     return render_template('index.html')
 
+
 @app.route('/records')
 def records_list():
     """记录列表"""
     return render_template('records/list.html')
+
 
 @app.route('/records/add', methods=['GET', 'POST'])
 def add_record():
     """添加记录"""
     return render_template('records/add.html')
 
+
 @app.route('/statistics')
 def statistics():
     """统计分析"""
     return render_template('statistics/index.html')
+
 
 @app.route('/export')
 def export():
     """数据导出"""
     return render_template('export/index.html')
 
+
 @app.route('/settings')
 def settings():
     """设置"""
     return render_template('settings/index.html')
+
+
+# API 路由需要排除 CSRF 检验（使用 token 认证）
+@csrf.exempt
+@app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def api_proxy(path):
+    """API 路由代理"""
+    # API 路由的具体实现
+    pass
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)
+```
+
+**.env.example**
+```bash
+# Flask 配置
+SECRET_KEY=your-secret-key-change-this-in-production
+FLASK_DEBUG=False
+PORT=5000
+
+# 数据目录
+DATA_DIR=data
+
+# 日志级别
+LOG_LEVEL=INFO
 ```
 
 #### 任务1.4：模板继承结构
@@ -930,31 +1203,52 @@ if __name__ == '__main__':
 
 **services/record_service.py**
 ```python
-from typing import List, Dict
-from models.record import PurchaseRecord, RedeemRecord, InvestmentGroup
+"""记录业务逻辑服务"""
+import json
+from datetime import datetime
+from typing import List, Dict, Optional, Any
+
+from constants import (
+    DATE_FORMAT, DATETIME_FORMAT,
+    RECORD_TYPE_PURCHASE, RECORD_TYPE_REDEEM,
+    STATUS_HOLDING, STATUS_PARTIAL, STATUS_COMPLETED, STATUS_EXPIRED,
+    DEFAULT_ITEMS_PER_PAGE
+)
+from utils.error_handlers import NotFoundError, ValidationError, BusinessError
+
 
 class RecordService:
-    def __init__(self, data_file='data/finance_data.json'):
-        self.data_file = data_file
-        self.records = self.load_data()
+    """记录服务类"""
     
-    def load_data(self):
+    def __init__(self, data_file: str = 'data/finance_data.json'):
+        self.data_file = data_file
+        self.records: List[Dict[str, Any]] = self._load_data()
+    
+    def _load_data(self) -> List[Dict[str, Any]]:
         """加载数据"""
         try:
             with open(self.data_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # 过滤已删除的记录
+                return [r for r in data if not r.get('deleted', False)]
         except FileNotFoundError:
             return []
     
-    def save_data(self):
+    def _save_data(self) -> None:
         """保存数据"""
         with open(self.data_file, 'w', encoding='utf-8') as f:
             json.dump(self.records, f, indent=2, ensure_ascii=False)
     
-    def get_grouped_records(self, status_filter=None, search_query=None) -> List[Dict]:
+    def get_grouped_records(
+        self,
+        status_filter: Optional[str] = None,
+        search_query: Optional[str] = None,
+        page: int = 1,
+        per_page: int = DEFAULT_ITEMS_PER_PAGE
+    ) -> Dict[str, Any]:
         """获取分组记录"""
-        purchases = [r for r in self.records if r['type'] == 'purchase']
-        redeems = [r for r in self.records if r['type'] == 'redeem']
+        purchases = [r for r in self.records if r['type'] == RECORD_TYPE_PURCHASE]
+        redeems = [r for r in self.records if r['type'] == RECORD_TYPE_REDEEM]
         
         groups = []
         for purchase in purchases:
@@ -973,7 +1267,7 @@ class RecordService:
             real_rate = self._calculate_real_rate(purchase, related_redeems)
             
             # 确定状态
-            status = self._determine_status(purchase, remaining, related_redeems)
+            status = self._determine_status(purchase, remaining)
             
             # 应用筛选
             if status_filter and status != status_filter:
@@ -998,18 +1292,90 @@ class RecordService:
                 }
             })
         
-        return groups
+        # 分页
+        total = len(groups)
+        total_pages = (total + per_page - 1) // per_page
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_groups = groups[start:end]
+        
+        return {
+            'groups': paginated_groups,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages
+        }
     
-    def _calculate_real_rate(self, purchase, redeems):
+    def delete_record(self, record_id: str, soft_delete: bool = True) -> bool:
+        """删除记录（支持软删除）"""
+        record = next((r for r in self.records if r['id'] == record_id), None)
+        if not record:
+            raise NotFoundError('记录', record_id)
+        
+        if soft_delete:
+            # 软删除
+            record['deleted'] = True
+            record['deleted_at'] = datetime.now().strftime(DATETIME_FORMAT)
+            self._save_data()
+        else:
+            # 硬删除
+            self.records = [r for r in self.records if r['id'] != record_id]
+            # 同时删除关联的赎回记录
+            if record['type'] == RECORD_TYPE_PURCHASE:
+                self.records = [
+                    r for r in self.records 
+                    if r.get('purchase_record_id') != record_id
+                ]
+            self._save_data()
+        
+        return True
+    
+    def restore_record(self, record_id: str) -> bool:
+        """恢复已软删除的记录"""
+        # 从完整数据中查找（包括已删除的）
+        all_records = self._load_all_data()
+        record = next((r for r in all_records if r['id'] == record_id), None)
+        
+        if not record:
+            raise NotFoundError('记录', record_id)
+        
+        if not record.get('deleted', False):
+            raise BusinessError('记录未被删除，无需恢复')
+        
+        record['deleted'] = False
+        record['deleted_at'] = None
+        
+        # 保存完整数据
+        with open(self.data_file, 'w', encoding='utf-8') as f:
+            json.dump(all_records, f, indent=2, ensure_ascii=False)
+        
+        # 重新加载
+        self.records = [r for r in all_records if not r.get('deleted', False)]
+        return True
+    
+    def _load_all_data(self) -> List[Dict[str, Any]]:
+        """加载所有数据（包括已删除的）"""
+        try:
+            with open(self.data_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return []
+    
+    def _calculate_real_rate(
+        self,
+        purchase: Dict[str, Any],
+        redeems: List[Dict[str, Any]]
+    ) -> float:
         """计算真实年化收益率"""
         if not redeems:
-            return 0
+            return 0.0
         
         total_profit = sum(r.get('actual_profit', 0) for r in redeems)
         total_amount = sum(r['redeem_amount'] for r in redeems)
         
         if total_amount <= 0:
-            return 0
+            return 0.0
         
         # 加权平均持有天数
         total_days = sum(
@@ -1022,28 +1388,29 @@ class RecordService:
         avg_days = total_days / total_amount if total_amount > 0 else 0
         
         if avg_days <= 0:
-            return 0
+            return 0.0
         
         return (total_profit / total_amount) * (365 / avg_days) * 100
     
-    def _determine_status(self, purchase, remaining, redeems):
+    def _determine_status(
+        self,
+        purchase: Dict[str, Any],
+        remaining: float
+    ) -> str:
         """确定投资状态"""
-        from datetime import datetime
-        
         if remaining <= 0:
-            return 'completed'
+            return STATUS_COMPLETED
         elif remaining < purchase['amount']:
-            return 'partial'
-        elif datetime.strptime(purchase['end_date'], '%Y-%m-%d') < datetime.now():
-            return 'expired'
+            return STATUS_PARTIAL
+        elif datetime.strptime(purchase['end_date'], DATE_FORMAT) < datetime.now():
+            return STATUS_EXPIRED
         else:
-            return 'holding'
+            return STATUS_HOLDING
     
-    def _days_between(self, date1_str, date2_str):
+    def _days_between(self, date1_str: str, date2_str: str) -> int:
         """计算两个日期之间的天数"""
-        from datetime import datetime
-        date1 = datetime.strptime(date1_str, '%Y-%m-%d')
-        date2 = datetime.strptime(date2_str, '%Y-%m-%d')
+        date1 = datetime.strptime(date1_str, DATE_FORMAT)
+        date2 = datetime.strptime(date2_str, DATE_FORMAT)
         return (date2 - date1).days
 ```
 
@@ -1489,104 +1856,417 @@ fetch('/api/dashboard')
 
 ## 七、测试计划
 
-### 7.1 单元测试
+### 7.1 测试配置
+
+**tests/conftest.py**
+```python
+"""测试配置和公共 Fixtures"""
+import pytest
+import tempfile
+import os
+import json
+from datetime import datetime, timedelta
+
+from app import app
+from services.record_service import RecordService
+
+
+@pytest.fixture
+def app_instance():
+    """创建测试用的 Flask 应用"""
+    app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False  # 测试时禁用 CSRF
+    return app
+
+
+@pytest.fixture
+def client(app_instance):
+    """创建测试客户端"""
+    with app_instance.test_client() as client:
+        yield client
+
+
+@pytest.fixture
+def temp_data_file():
+    """创建临时数据文件"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump([], f)
+        temp_path = f.name
+    
+    yield temp_path
+    
+    # 清理
+    if os.path.exists(temp_path):
+        os.unlink(temp_path)
+
+
+@pytest.fixture
+def record_service(temp_data_file):
+    """创建测试用的 RecordService"""
+    return RecordService(data_file=temp_data_file)
+```
+
+### 7.2 测试数据工厂
+
+**tests/factories.py**
+```python
+"""测试数据工厂"""
+import uuid
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+
+from constants import DATE_FORMAT
+
+
+def create_purchase_record(**kwargs) -> Dict[str, Any]:
+    """创建测试购买记录"""
+    defaults = {
+        'id': str(uuid.uuid4()),
+        'type': 'purchase',
+        'product_name': '测试理财产品',
+        'amount': 100000.0,
+        'annual_rate': 0.04,
+        'duration': 90,
+        'purchase_date': datetime.now().strftime(DATE_FORMAT),
+        'end_date': (datetime.now() + timedelta(days=90)).strftime(DATE_FORMAT),
+        'bank_name': '测试银行',
+        'product_code': 'TEST001',
+        'risk_level': 'medium',
+        'category': '固定收益',
+        'tags': ['测试'],
+        'notes': '测试数据',
+        'created_at': datetime.now().isoformat(),
+        'updated_at': datetime.now().isoformat(),
+        'deleted': False,
+        'deleted_at': None
+    }
+    defaults.update(kwargs)
+    return defaults
+
+
+def create_redeem_record(
+    purchase_id: Optional[str] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """创建测试赎回记录"""
+    defaults = {
+        'id': str(uuid.uuid4()),
+        'type': 'redeem',
+        'purchase_record_id': purchase_id or str(uuid.uuid4()),
+        'redeem_amount': 100000.0,
+        'redeem_date': (datetime.now() + timedelta(days=90)).strftime(DATE_FORMAT),
+        'actual_profit': 1000.0,
+        'profit_calc': 'manual',
+        'redeem_type': 'maturity',
+        'redeem_reason': '测试赎回',
+        'fees': 0.0,
+        'tax': 0.0,
+        'net_profit': 1000.0,
+        'created_at': datetime.now().isoformat(),
+        'updated_at': datetime.now().isoformat(),
+        'deleted': False,
+        'deleted_at': None
+    }
+    defaults.update(kwargs)
+    return defaults
+
+
+def create_investment_pair(
+    purchase_kwargs: Optional[Dict] = None,
+    redeem_kwargs: Optional[Dict] = None
+) -> tuple:
+    """创建一对购买和赎回记录"""
+    purchase = create_purchase_record(**(purchase_kwargs or {}))
+    redeem = create_redeem_record(
+        purchase_id=purchase['id'],
+        **(redeem_kwargs or {})
+    )
+    return purchase, redeem
+```
+
+### 7.3 单元测试
 
 **tests/test_services.py**
 ```python
+"""服务层单元测试"""
 import pytest
+from datetime import datetime, timedelta
+
 from services.record_service import RecordService
+from utils.error_handlers import NotFoundError, BusinessError
+from tests.factories import create_purchase_record, create_redeem_record
+from constants import DATE_FORMAT
 
-@pytest.fixture
-def sample_data():
-    return [
-        {
-            "id": "test-1",
-            "type": "purchase",
-            "product_name": "测试产品",
-            "amount": 100000,
-            "annual_rate": 0.04,
-            "duration": 90,
-            "purchase_date": "2025-01-01",
-            "end_date": "2025-04-01"
-        },
-        {
-            "id": "test-2",
-            "type": "redeem",
-            "purchase_record_id": "test-1",
-            "redeem_amount": 100000,
-            "redeem_date": "2025-04-01",
-            "actual_profit": 1000,
-            "profit_calc": "manual"
-        }
-    ]
 
-def test_get_grouped_records(sample_data):
-    service = RecordService()
-    service.records = sample_data
+class TestRecordService:
+    """RecordService 测试类"""
     
-    groups = service.get_grouped_records()
+    def test_get_grouped_records_empty(self, record_service):
+        """测试空数据的分组查询"""
+        result = record_service.get_grouped_records()
+        assert result['groups'] == []
+        assert result['total'] == 0
     
-    assert len(groups) == 1
-    assert groups[0]['purchase']['id'] == 'test-1'
-    assert len(groups[0]['redeems']) == 1
-    assert groups[0]['summary']['total_profit'] == 1000
-
-def test_status_calculation(sample_data):
-    service = RecordService()
-    service.records = sample_data
+    def test_get_grouped_records_single(self, record_service):
+        """测试单条记录的分组查询"""
+        purchase = create_purchase_record()
+        redeem = create_redeem_record(purchase_id=purchase['id'])
+        record_service.records = [purchase, redeem]
+        
+        result = record_service.get_grouped_records()
+        
+        assert result['total'] == 1
+        assert result['groups'][0]['purchase']['id'] == purchase['id']
+        assert len(result['groups'][0]['redeems']) == 1
+        assert result['groups'][0]['summary']['total_profit'] == 1000.0
     
-    groups = service.get_grouped_records()
+    def test_get_grouped_records_with_filter(self, record_service):
+        """测试带筛选条件的分组查询"""
+        # 创建持有中的记录
+        purchase1 = create_purchase_record(product_name='持有中产品')
+        # 创建已完结的记录
+        purchase2 = create_purchase_record(product_name='已完结产品')
+        redeem = create_redeem_record(purchase_id=purchase2['id'])
+        
+        record_service.records = [purchase1, purchase2, redeem]
+        
+        # 筛选持有中
+        result = record_service.get_grouped_records(status_filter='holding')
+        assert result['total'] == 1
+        assert result['groups'][0]['purchase']['product_name'] == '持有中产品'
+        
+        # 筛选已完结
+        result = record_service.get_grouped_records(status_filter='completed')
+        assert result['total'] == 1
+        assert result['groups'][0]['purchase']['product_name'] == '已完结产品'
     
-    assert groups[0]['summary']['status'] == 'completed'
+    def test_get_grouped_records_with_search(self, record_service):
+        """测试带搜索条件的分组查询"""
+        purchase1 = create_purchase_record(product_name='交通银行理财', bank_name='交通银行')
+        purchase2 = create_purchase_record(product_name='民生银行理财', bank_name='民生银行')
+        record_service.records = [purchase1, purchase2]
+        
+        # 搜索产品名
+        result = record_service.get_grouped_records(search_query='交通')
+        assert result['total'] == 1
+        
+        # 搜索银行名
+        result = record_service.get_grouped_records(search_query='民生')
+        assert result['total'] == 1
+    
+    def test_status_calculation(self, record_service):
+        """测试状态计算"""
+        # 持有中
+        purchase = create_purchase_record(
+            end_date=(datetime.now() + timedelta(days=30)).strftime(DATE_FORMAT)
+        )
+        status = record_service._determine_status(purchase, purchase['amount'])
+        assert status == 'holding'
+        
+        # 部分赎回
+        status = record_service._determine_status(purchase, purchase['amount'] / 2)
+        assert status == 'partial'
+        
+        # 已完结
+        status = record_service._determine_status(purchase, 0)
+        assert status == 'completed'
+        
+        # 已到期
+        expired_purchase = create_purchase_record(
+            end_date=(datetime.now() - timedelta(days=1)).strftime(DATE_FORMAT)
+        )
+        status = record_service._determine_status(expired_purchase, expired_purchase['amount'])
+        assert status == 'expired'
+    
+    def test_calculate_real_rate(self, record_service):
+        """测试真实年化收益率计算"""
+        purchase = create_purchase_record(
+            purchase_date='2025-01-01',
+            annual_rate=0.04,
+            duration=90
+        )
+        redeem = create_redeem_record(
+            purchase_id=purchase['id'],
+            redeem_date='2025-04-01',
+            redeem_amount=100000,
+            actual_profit=1000
+        )
+        
+        real_rate = record_service._calculate_real_rate(purchase, [redeem])
+        
+        # 期望: (1000/100000) * (365/90) * 100 = 4.06%
+        assert abs(real_rate - 4.06) < 0.01
+    
+    def test_delete_record_soft(self, record_service):
+        """测试软删除"""
+        purchase = create_purchase_record()
+        record_service.records = [purchase]
+        
+        result = record_service.delete_record(purchase['id'], soft_delete=True)
+        
+        assert result is True
+        assert len(record_service.records) == 0  # 已删除的记录被过滤
+    
+    def test_delete_record_not_found(self, record_service):
+        """测试删除不存在的记录"""
+        with pytest.raises(NotFoundError):
+            record_service.delete_record('non-existent-id')
+    
+    def test_days_between(self, record_service):
+        """测试日期天数计算"""
+        days = record_service._days_between('2025-01-01', '2025-04-01')
+        assert days == 90
 ```
 
-### 7.2 集成测试
+### 7.4 集成测试
 
 **tests/test_routes.py**
 ```python
+"""路由集成测试"""
 import pytest
-from app import app
 
-@pytest.fixture
-def client():
-    app.config['TESTING'] = True
-    with app.test_client() as client:
-        yield client
 
-def test_index_page(client):
-    response = client.get('/')
-    assert response.status_code == 200
-    assert '仪表盘' in response.data.decode()
+class TestRoutes:
+    """路由测试类"""
+    
+    def test_index_page(self, client):
+        """测试首页"""
+        response = client.get('/')
+        assert response.status_code == 200
+    
+    def test_records_page(self, client):
+        """测试记录列表页"""
+        response = client.get('/records')
+        assert response.status_code == 200
+    
+    def test_add_record_page(self, client):
+        """测试添加记录页"""
+        response = client.get('/records/add')
+        assert response.status_code == 200
+    
+    def test_statistics_page(self, client):
+        """测试统计页面"""
+        response = client.get('/statistics')
+        assert response.status_code == 200
+    
+    def test_export_page(self, client):
+        """测试导出页面"""
+        response = client.get('/export')
+        assert response.status_code == 200
+    
+    def test_settings_page(self, client):
+        """测试设置页面"""
+        response = client.get('/settings')
+        assert response.status_code == 200
+    
+    def test_404_page(self, client):
+        """测试404页面"""
+        response = client.get('/non-existent-page')
+        assert response.status_code == 404
 
-def test_records_page(client):
-    response = client.get('/records')
-    assert response.status_code == 200
 
-def test_add_record(client):
-    response = client.get('/records/add')
-    assert response.status_code == 200
-
-def test_api_dashboard(client):
-    response = client.get('/api/dashboard')
-    assert response.status_code == 200
-    data = response.get_json()
-    assert 'summary' in data
+class TestAPIRoutes:
+    """API 路由测试类"""
+    
+    def test_api_dashboard(self, client):
+        """测试仪表盘API"""
+        response = client.get('/api/dashboard')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert 'summary' in data
+    
+    def test_api_records(self, client):
+        """测试记录列表API"""
+        response = client.get('/api/records')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert 'groups' in data
 ```
 
-### 7.3 测试用例清单
+### 7.5 数据验证测试
 
-| 模块 | 测试项 | 预期结果 |
-|------|--------|----------|
-| 数据模型 | 创建购买记录 | 记录正确创建 |
-| 数据模型 | 创建赎回记录 | 记录正确创建，关联正确 |
-| 数据模型 | 计算状态 | holding/completed正确 |
-| 数据模型 | 计算收益率 | 结果准确 |
-| 记录服务 | 分组查询 | 正确分组 |
-| 记录服务 | 筛选功能 | 结果正确 |
-| 记录服务 | 搜索功能 | 结果正确 |
-| 路由 | 首页访问 | 200 OK |
-| 路由 | 添加记录 | 表单正常 |
-| 路由 | API接口 | JSON格式正确 |
+**tests/test_schemas.py**
+```python
+"""数据验证测试"""
+import pytest
+from datetime import datetime
+
+from models.schemas import PurchaseSchema, RedeemSchema
+from tests.factories import create_purchase_record, create_redeem_record
+
+
+class TestPurchaseSchema:
+    """购买记录 Schema 测试"""
+    
+    def test_valid_purchase(self):
+        """测试有效购买记录"""
+        data = create_purchase_record()
+        schema = PurchaseSchema()
+        result = schema.load(data)
+        assert result['product_name'] == '测试理财产品'
+        assert result['amount'] == 100000.0
+    
+    def test_invalid_amount(self):
+        """测试无效金额"""
+        data = create_purchase_record(amount=-100)
+        schema = PurchaseSchema()
+        with pytest.raises(Exception):
+            schema.load(data)
+    
+    def test_missing_required_field(self):
+        """测试缺少必填字段"""
+        data = create_purchase_record()
+        del data['product_name']
+        schema = PurchaseSchema()
+        with pytest.raises(Exception):
+            schema.load(data)
+
+
+class TestRedeemSchema:
+    """赎回记录 Schema 测试"""
+    
+    def test_valid_redeem(self):
+        """测试有效赎回记录"""
+        data = create_redeem_record()
+        schema = RedeemSchema()
+        result = schema.load(data)
+        assert result['redeem_amount'] == 100000.0
+    
+    def test_invalid_redeem_type(self):
+        """测试无效赎回类型"""
+        data = create_redeem_record(redeem_type='invalid')
+        schema = RedeemSchema()
+        with pytest.raises(Exception):
+            schema.load(data)
+```
+
+### 7.6 测试用例清单
+
+| 模块 | 测试项 | 预期结果 | 优先级 |
+|------|--------|----------|--------|
+| **数据模型** | 创建购买记录 | 记录正确创建 | P0 |
+| **数据模型** | 创建赎回记录 | 记录正确创建，关联正确 | P0 |
+| **数据模型** | 计算状态 | holding/completed/partial/expired正确 | P0 |
+| **数据模型** | 计算收益率 | 结果准确，边界值正确 | P0 |
+| **数据验证** | 有效数据验证 | 通过验证 | P0 |
+| **数据验证** | 无效金额验证 | 拒绝负数和0 | P0 |
+| **数据验证** | 缺少必填字段 | 拒绝并报错 | P0 |
+| **数据验证** | 无效枚举值 | 拒绝并报错 | P0 |
+| **记录服务** | 分组查询 | 正确分组 | P0 |
+| **记录服务** | 筛选功能 | 结果正确 | P0 |
+| **记录服务** | 搜索功能 | 结果正确 | P0 |
+| **记录服务** | 软删除 | 记录标记为删除 | P0 |
+| **记录服务** | 删除不存在记录 | 抛出 NotFoundError | P0 |
+| **记录服务** | 分页功能 | 正确分页 | P1 |
+| **路由** | 首页访问 | 200 OK | P0 |
+| **路由** | 所有页面访问 | 200 OK | P0 |
+| **路由** | 404页面 | 404 状态码 | P1 |
+| **API** | 仪表盘API | 返回正确JSON | P0 |
+| **API** | 记录列表API | 返回正确JSON | P0 |
+| **边界值** | 金额为0 | 拒绝 | P0 |
+| **边界值** | 金额为负数 | 拒绝 | P0 |
+| **边界值** | 日期格式错误 | 拒绝 | P0 |
+| **边界值** | 期限为0 | 拒绝 | P0 |
 
 ---
 
@@ -1596,20 +2276,41 @@ def test_api_dashboard(client):
 
 **Dockerfile**
 ```dockerfile
+# 使用官方 Python 镜像
 FROM python:3.11-slim
 
-WORKDIR /app
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_HOME=/app
 
+# 创建非 root 用户
+RUN groupadd -r appuser && useradd -r -g appuser -d $APP_HOME -s /sbin/nologin appuser
+
+# 设置工作目录
+WORKDIR $APP_HOME
+
+# 安装依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
+# 复制应用代码
 COPY . .
 
-# 创建数据目录
-RUN mkdir -p data/backups
+# 创建数据目录并设置权限
+RUN mkdir -p data/backups && \
+    chown -R appuser:appuser $APP_HOME
+
+# 切换到非 root 用户
+USER appuser
 
 # 暴露端口
 EXPOSE 5000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/')" || exit 1
 
 # 启动命令
 CMD ["python", "app.py"]
@@ -1617,33 +2318,59 @@ CMD ["python", "app.py"]
 
 **docker-compose.yml**
 ```yaml
-version: '3'
+version: '3.8'
 
 services:
   familyfinance:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: familyfinance
     ports:
-      - "5000:5000"
+      - "${PORT:-5000}:5000"
     volumes:
       - ./data:/app/data
     environment:
-      - FLASK_ENV=production
+      - FLASK_DEBUG=${FLASK_DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATA_DIR=/app/data
+    env_file:
+      - .env
     restart: unless-stopped
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 ```
 
 ### 8.2 传统部署
 
 ```bash
-# 1. 安装依赖
+# 1. 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\Scripts\activate  # Windows
+
+# 2. 安装依赖
 pip install -r requirements.txt
 
-# 2. 数据迁移
+# 3. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，设置 SECRET_KEY 等配置
+
+# 4. 数据迁移（如果需要）
 python migrate_data.py
 
-# 3. 启动应用
+# 5. 启动应用
 python app.py
 
-# 4. 访问
+# 6. 访问
 # http://localhost:5000
 ```
 
@@ -1651,18 +2378,72 @@ python app.py
 
 **config.py**
 ```python
+"""应用配置"""
 import os
+from typing import Type
 
-class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+class BaseConfig:
+    """基础配置"""
+    SECRET_KEY = os.environ.get('SECRET_KEY', os.urandom(24).hex())
     DATA_DIR = os.environ.get('DATA_DIR', 'data')
-    DEBUG = os.environ.get('FLASK_DEBUG', False)
-    
-class ProductionConfig(Config):
-    DEBUG = False
-    
-class DevelopmentConfig(Config):
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = 3600
+
+
+class DevelopmentConfig(BaseConfig):
+    """开发环境配置"""
     DEBUG = True
+    TESTING = False
+
+
+class TestingConfig(BaseConfig):
+    """测试环境配置"""
+    DEBUG = False
+    TESTING = True
+    WTF_CSRF_ENABLED = False
+
+
+class ProductionConfig(BaseConfig):
+    """生产环境配置"""
+    DEBUG = False
+    TESTING = False
+
+
+def get_config() -> Type[BaseConfig]:
+    """根据环境变量获取配置"""
+    env = os.environ.get('FLASK_ENV', 'production')
+    
+    config_map = {
+        'development': DevelopmentConfig,
+        'testing': TestingConfig,
+        'production': ProductionConfig
+    }
+    
+    return config_map.get(env, ProductionConfig)
+```
+
+### 8.4 Nginx 反向代理配置（可选）
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        alias /path/to/FamilyFinance/static/;
+        expires 1d;
+        add_header Cache-Control "public, immutable";
+    }
+}
 ```
 
 ---
@@ -1703,35 +2484,70 @@ class DevelopmentConfig(Config):
 flask>=3.0.0
 flask-wtf>=1.2.0
 marshmallow>=3.20.0
+python-dotenv>=1.0.0
 openpyxl>=3.1.0
 reportlab>=4.0.0
 apscheduler>=3.10.0
+bleach>=6.0.0
+```
+
+**开发依赖**
+```
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-flask>=1.3.0
 ```
 
 ### B. 环境变量
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| SECRET_KEY | Flask密钥 | your-secret-key |
-| DATA_DIR | 数据目录 | data |
-| FLASK_DEBUG | 调试模式 | False |
-| PORT | 端口号 | 5000 |
+| 变量名 | 说明 | 默认值 | 必填 |
+|--------|------|--------|------|
+| SECRET_KEY | Flask密钥 | 自动生成 | 生产环境必填 |
+| DATA_DIR | 数据目录 | data | 否 |
+| FLASK_DEBUG | 调试模式 | False | 否 |
+| FLASK_ENV | 环境类型 | production | 否 |
+| PORT | 端口号 | 5000 | 否 |
+| LOG_LEVEL | 日志级别 | INFO | 否 |
 
 ### C. API接口清单
 
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /api/dashboard | GET | 仪表盘数据 |
-| /api/records | GET | 记录列表 |
-| /api/records/<id> | GET | 记录详情 |
-| /api/records | POST | 创建记录 |
-| /api/records/<id> | PUT | 更新记录 |
-| /api/records/<id> | DELETE | 删除记录 |
-| /api/statistics | GET | 统计数据 |
-| /api/export | GET | 导出数据 |
+| 接口 | 方法 | 说明 | 认证 |
+|------|------|------|------|
+| / | GET | 首页/仪表盘页面 | 否 |
+| /records | GET | 记录列表页面 | 否 |
+| /records/add | GET/POST | 添加记录页面 | 否 |
+| /statistics | GET | 统计分析页面 | 否 |
+| /export | GET | 数据导出页面 | 否 |
+| /settings | GET | 设置页面 | 否 |
+| /api/dashboard | GET | 仪表盘数据 | CSRF |
+| /api/records | GET | 记录列表 | CSRF |
+| /api/records/<id> | GET | 记录详情 | CSRF |
+| /api/records | POST | 创建记录 | CSRF |
+| /api/records/<id> | PUT | 更新记录 | CSRF |
+| /api/records/<id> | DELETE | 删除记录 | CSRF |
+| /api/statistics | GET | 统计数据 | CSRF |
+| /api/export | GET | 导出数据 | CSRF |
+
+### D. 错误码说明
+
+| 错误码 | 说明 | 处理建议 |
+|--------|------|----------|
+| 200 | 成功 | - |
+| 400 | 请求参数错误 | 检查请求参数 |
+| 404 | 资源未找到 | 检查资源ID |
+| 405 | 请求方法不允许 | 检查HTTP方法 |
+| 500 | 服务器内部错误 | 检查服务器日志 |
+
+### E. 数据迁移检查清单
+
+- [ ] 备份原始数据文件
+- [ ] 运行迁移脚本
+- [ ] 验证迁移后的数据完整性
+- [ ] 测试所有功能正常
+- [ ] 确认软删除字段已添加
 
 ---
 
-*文档版本：v1.0*
+*文档版本：v1.1*
 *最后更新：2026-06-27*
-*作者：FamilyFinance Team*
+*修订内容：添加安全配置、错误处理、数据验证、软删除、测试用例*
