@@ -15,7 +15,7 @@
 | **核心** | 买卖关联展示 | P0 | 分组视图，展示投资生命周期 |
 | **核心** | 添加/编辑/删除记录 | P0 | 基础CRUD操作 |
 | **核心** | 收益计算 | P0 | 自动计算+手动输入 |
-| **仪表盘** | 总投入/总资产/总收益/年化收益 | P0 | 四大核心指标 |
+| **仪表盘** | 总投入/持有中/累计收益/平均年化 | P0 | 四大核心指标 |
 | **仪表盘** | 即将到期产品列表 | P0 | 未来30天到期提醒 |
 | **仪表盘** | 持有中产品列表 | P0 | 快速查看当前投资 |
 | **仪表盘** | 最近赎回记录 | P1 | 查看最近收益 |
@@ -62,11 +62,18 @@
 ```
 
 ### 2.2 赎回记录
+
+> 注意：赎回记录反规范化冗余存储购入时的产品名、年化等信息，避免每次展示都做 JOIN 查询。
+
 ```json
 {
   "id": "uuid",
   "type": "redeem",
   "purchase_record_id": "关联ID",
+  "product_name": "交银理财灵动慧利6号90天",
+  "purchase_date": "2025-01-09",
+  "annual_rate": 0.0474,
+  "duration": 90,
   "redeem_amount": 100000.0,
   "redeem_date": "2025-04-17",
   "actual_profit": 511.0,
@@ -85,8 +92,8 @@
 │                        投资仪表盘                                │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐           │
-│  │ 总投入   │  │ 总资产   │  │ 总收益   │  │ 年化收益 │           │
-│  │ 500,000 │  │ 503,250 │  │ 3,250   │  │ 3.85%  │           │
+│  │ 总投入   │  │ 持有中   │  │ 累计收益 │  │ 平均年化 │           │
+│  │ 500,000 │  │ 300,000 │  │ 3,250   │  │ 3.85%  │           │
 │  └─────────┘  └─────────┘  └─────────┘  └─────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │  即将到期产品（未来30天）                      [查看全部]        │
@@ -166,7 +173,7 @@
 ### 4.1 目录结构
 ```
 FamilyFinance/
-├── app.py                  # Flask 应用入口
+├── app.py                  # Flask 应用入口（需同步修改 DATA_FILE 路径指向 data/）
 ├── config.py               # 配置文件
 ├── requirements.txt        # 依赖管理
 │
@@ -193,25 +200,39 @@ FamilyFinance/
 │   ├── records/
 │   │   ├── list.html      # 记录列表
 │   │   ├── add.html       # 添加记录
-│   │   └── edit.html      # 编辑记录
+│   │   └── edit.html      # 编辑记录（需添加 bank_name 字段）
 │   └── statistics/
 │       └── index.html     # 统计分析
 │
 ├── data/                   # 数据目录
 │   └── finance_data.json
 │
-└── tests/                  # 测试
+└── tests/                  # 测试（使用 pytest）
     ├── test_services.py
     └── test_routes.py
 ```
 
-### 4.2 依赖清单
+### 4.2 路由清理
+
+当前代码存在**两条冲突的赎回路径**，必须统一：
+
+| 路径 | 当前行为 | 处理方式 |
+|------|----------|----------|
+| `/add` type=redeem | 创建独立赎回记录 ✅ | 保留并增强 |
+| `/redeem` | 原地修改 purchase.amount ❌ | **删除此路由及对应模板** |
+
+统一策略：所有赎回操作通过 `POST /add` 提交创建独立的 redeem 记录。删除 `/redeem` 路由和 `templates/redeem.html`。
+
+### 4.3 依赖清单
 ```
 flask>=3.0.0
 openpyxl>=3.1.0
+pytest>=7.0.0          # 测试框架
 ```
 
-### 4.3 核心代码示例
+⚠️ **注意**：当前 `requirements.txt` 错误地列出了 `uuid` 和 `datetime`——这俩是 Python 标准库，pip 安装同名包会装错。需清理为以上条目。
+
+### 4.4 核心代码示例
 
 **services/statistics_service.py**
 ```python
@@ -237,6 +258,12 @@ class StatisticsService:
         total_redeemed = sum(r['redeem_amount'] for r in self.redeems)
         total_profit = sum(r.get('actual_profit', 0) for r in self.redeems)
         
+        # 持有中本金 = 总投入 - 已赎回本金
+        holding_principal = total_invested - total_redeemed
+        
+        # 总资产 = 持有中本金 + 累计已到账收益
+        total_assets = holding_principal + total_profit if holding_principal > 0 else total_profit
+        
         # 计算平均年化收益率
         avg_rate = 0
         if self.redeems:
@@ -252,8 +279,9 @@ class StatisticsService:
         
         return {
             'total_invested': total_invested,
-            'total_assets': total_invested,  # 简化：不计算已赎回
-            'total_profit': total_profit,
+            'holding_principal': holding_principal,   # 持有中本金
+            'total_assets': round(total_assets, 2),   # 总资产
+            'total_profit': round(total_profit, 2),
             'avg_rate': round(avg_rate, 2)
         }
     
@@ -294,23 +322,25 @@ class StatisticsService:
         return dict(sorted(monthly.items()))
     
     def get_profit_by_product(self) -> List[Dict[str, Any]]:
-        """按产品统计收益"""
+        """按产品统计收益（从购买记录反查产品名，避免依赖冗余字段）"""
         product_profits = defaultdict(float)
         product_info = {}
         
         for r in self.redeems:
-            product_name = r.get('product_name', '未知产品')
+            # 从关联的购买记录获取产品名，而非依赖 r.get('product_name')
+            purchase = self._find_purchase(r['purchase_record_id'])
+            if not purchase:
+                continue
+            product_name = purchase['product_name']
             product_profits[product_name] += r.get('actual_profit', 0)
             
             if product_name not in product_info:
-                purchase = self._find_purchase(r['purchase_record_id'])
-                if purchase:
-                    days = self._days_between(purchase['purchase_date'], r['redeem_date'])
-                    rate = (r['actual_profit'] / r['redeem_amount']) * (365 / days) * 100 if days > 0 else 0
-                    product_info[product_name] = {
-                        'days': days,
-                        'rate': round(rate, 2)
-                    }
+                days = self._days_between(purchase['purchase_date'], r['redeem_date'])
+                rate = (r['actual_profit'] / r['redeem_amount']) * (365 / days) * 100 if days > 0 else 0
+                product_info[product_name] = {
+                    'days': days,
+                    'rate': round(rate, 2)
+                }
         
         result = []
         for name, profit in sorted(product_profits.items(), key=lambda x: x[1], reverse=True):
@@ -319,7 +349,8 @@ class StatisticsService:
                 'product_name': name,
                 'profit': profit,
                 'rate': info['rate'],
-                'days': info['days']
+                'days': info['days'],
+                'sort_by_rate': round(info['rate'], 2)  # 支持按年化收益率排序
             })
         
         return result
@@ -396,42 +427,72 @@ class StatisticsService:
 
 ## 五、开发计划
 
+> 当前代码功能约 80% 已完成，主要工作是前端重构 + 统计增强 + 路由清理 + 测试。
+
 ### 5.1 阶段划分
 
 | 阶段 | 时间 | 内容 | 交付物 |
 |------|------|------|--------|
-| 阶段一 | 1周 | 基础架构 | 目录结构、数据模型、迁移脚本 |
-| 阶段二 | 1.5周 | 核心功能 | 买卖关联展示、CRUD操作 |
-| 阶段三 | 1.5周 | 仪表盘 | 指标卡片、到期提醒、持有列表 |
-| 阶段四 | 1.5周 | 统计分析 | 图表、排行榜、摘要 |
-| 阶段五 | 0.5周 | 导出+测试 | Excel导出、基础测试 |
-| **总计** | **6周** | | |
+| 阶段一 | 2天 | 基础架构+路由清理 | 目录结构、删除 `/redeem` 路由、数据迁移 |
+| 阶段二 | 3天 | 核心功能重构 | 买卖关联卡片式展示、表单优化（补 bank_name） |
+| 阶段三 | 3天 | 仪表盘 | 四大指标卡片、到期提醒、持有列表、最近赎回 |
+| 阶段四 | 2天 | 统计分析增强 | 月度趋势图、收益/银行分布图、排行榜、摘要 |
+| 阶段五 | 1天 | 导出+测试 | Excel导出、pytest 基础测试 |
+| **总计** | **11天（约2-3周）** | | |
 
 ### 5.2 里程碑
 
 | 里程碑 | 时间 | 交付物 |
 |--------|------|--------|
-| M1 | 第1周末 | 基础架构完成 |
-| M2 | 第2.5周末 | 核心功能可用 |
-| M3 | 第4周末 | 仪表盘完成 |
-| M4 | 第5.5周末 | 统计分析完成 |
-| M5 | 第6周末 | 全部完成，可上线 |
+| M1 | 第2天 | 基础架构完成，路由清理完毕 |
+| M2 | 第5天 | 核心功能可用，买卖关联展示上线 |
+| M3 | 第8天 | 仪表盘完成 |
+| M4 | 第10天 | 统计分析完成 |
+| M5 | 第11天 | 全部完成，可上线 |
 
 ---
 
-## 六、快速开始
+## 六、其他说明
+
+### 6.1 CLI 入口处理
+
+当前项目有 `main.py`（CLI 菜单界面）和 `finance_manager.py`（CLI 业务逻辑），使用整型 ID 而非 UUID。建议：
+
+- **保留不变**：与 Web 端数据文件共用 `finance_data.json`，但各自独立操作
+- **不主动重构 CLI**：家庭用户通常只用 Web 端，CLI 作为备用入口保持最小可维护状态
+- 如需删除 CLI，需确认用户是否依赖 `main.py`
+
+### 6.2 数据迁移脚本要点
+
+迁移脚本 `migrate_data.py` 需处理：
+
+1. **数据目录迁移**：将根目录的 `finance_data.json` 复制到 `data/finance_data.json`
+2. **补全 bank_name**：旧数据可能缺 `bank_name`，设为 `"未知银行"` 兜底
+3. **清理错误依赖**：删除 `requirements.txt` 中的 `uuid` 和 `datetime`
+4. **兼容性**：不改动现有数据结构，只增字段
+
+### 6.3 编辑页面缺失字段
+
+当前 `templates/edit.html` 只编辑实际收益，产品名称/金额为 `disabled`。在添加 `bank_name` 字段后，编辑页需要：
+
+- 将 `bank_name` 加入可编辑字段（select 下拉框）
+- 添加 `{{ record.get('bank_name', '未知银行') }}` 回显
+
+### 6.4 快速开始
 
 ```bash
-# 安装依赖
+# 1. 修复 requirements.txt（删除 uuid/datetime，保留 flask+openpyxl+pytest）
+# 2. 安装依赖
 pip install -r requirements.txt
 
-# 数据迁移
+# 3. 数据迁移（路径迁移 + 字段补全）
 python migrate_data.py
 
-# 运行应用
+# 4. 修改 app.py 中 DATA_FILE = 'data/finance_data.json'
+# 5. 运行应用
 python app.py
 
-# 访问
+# 6. 访问
 # http://localhost:5000
 ```
 

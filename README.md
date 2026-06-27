@@ -145,25 +145,11 @@ FamilyFinance/
 
 ## 开发计划
 
-查看 [改进方案](docs/IMPROVEMENT_PLAN.md) 和 [开发方案](docs/DEVELOPMENT_PLAN.md) 了解详细的功能规划和开发计划。
-
-### 近期计划 (v1.1.0)
-- [ ] 界面美化，引入Bootstrap框架
-- [ ] 买卖记录分组展示
-- [ ] 搜索和筛选功能
-- [ ] 数据导出功能
-
-### 中期计划 (v1.2.0)
-- [ ] 投资仪表盘
-- [ ] 到期提醒功能
-- [ ] 批量操作
-- [ ] 更多统计图表
-
-### 远期计划 (v2.0.0)
-- [ ] 投资组合分析
-- [ ] 现金流预测
-- [ ] 多用户支持
-- [ ] 移动端适配
+查看开发方案了解详细规划：
+- **[家庭增强版](docs/DEVELOPMENT_PLAN_HOME.md)**（推荐）— v1.0-home，专注仪表盘和统计分析
+- [完整版](docs/DEVELOPMENT_PLAN.md) — v1.1，含企业级配置
+- [精简版](docs/DEVELOPMENT_PLAN_LITE.md) — v1.1-lite，基础功能
+- [改进提案](docs/IMPROVEMENT_PLAN.md) — 功能建议收集
 
 ## 贡献指南
 
